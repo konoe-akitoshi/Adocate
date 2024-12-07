@@ -52,11 +52,15 @@ Clone this repository:
 git clone https://github.com/your-username/adocate.git
 cd adocate
 ```
-
+## GUI Version
 Launch the tool:
-
 ```bash
-python adocate.py
+python adocate-gui.py
+```
+
+## CLI
+```bash
+python adocate-cli.py /path/to/photo/folder /path/to/location_history.json
 ```
 
 Use the GUI:
