@@ -37,14 +37,34 @@ pip install piexif Pillow
 ```
 
 # How to Use
-Download Google Maps Location History:
 
-Go to Google Takeout.
-Select Location History, export it as a .json file, and download it.
-Prepare Your Photos:
+## Step 1: Download Google Maps Location History
+1. Go to [Google Takeout](https://takeout.google.com/).
+2. Select **Location History**, export it as a `.json` file, and download it.
 
-Place your photos in a directory. Supported formats: .jpg, .jpeg.
-Run Adocate:
+---
+
+## Step 2: Prepare Your Photos
+1. Place the photos you want to process in a directory.
+2. Supported formats: `.jpg`, `.jpeg`.
+
+---
+
+## Step 3: Run Adocate
+
+### Option 1: Using the EXE File (Windows)
+
+If you are on **Windows** and have the pre-built `adocate.exe` file:
+
+1. Download the `adocate.exe` file from the [Releases](https://github.com/your-username/adocate/releases) page.
+2. Double-click on the `adocate.exe` file to launch the graphical interface.
+3. In the GUI:
+   - Select the folder containing your photos.
+   - Select the exported Google Maps location history JSON file.
+   - Click the **Run** button to process the photos.
+4. The tool will add GPS data to your photos and notify you upon completion.
+
+### Option 2: Using the Binary File (Linux)
 
 Clone this repository:
 
@@ -52,13 +72,13 @@ Clone this repository:
 git clone https://github.com/your-username/adocate.git
 cd adocate
 ```
-## GUI Version
+#### GUI Version
 Launch the tool:
 ```bash
 python adocate-gui.py
 ```
 
-## CLI
+#### CLI Version
 ```bash
 python adocate-cli.py /path/to/photo/folder /path/to/location_history.json
 ```
