@@ -99,29 +99,47 @@ def process_photos(photo_dir, json_file, progress):
 
     added_count = 0
     skipped_count = 0
+    error_log = []  # エラーログリストを作成
 
     for i, photo_file in enumerate(photos):
         photo_path = os.path.join(photo_dir, photo_file)
 
-        if has_gps_data(photo_path):
-            skipped_count += 1
-            print(f"Skipping photo (already has GPS): {photo_path}")
-            continue
+        try:
+            # Check if the photo already contains GPS data
+            if has_gps_data(photo_path):
+                skipped_count += 1
+                print(f"Skipping photo (already has GPS): {photo_path}")
+                continue
 
-        photo_time = get_photo_timestamp(photo_path)
-        if photo_time:
+            # Get timestamp from photo
+            photo_time = get_photo_timestamp(photo_path)
+            if not photo_time:
+                error_log.append(f"No timestamp found for: {photo_path}")
+                continue
+
+            # Find the closest location and add GPS data
             closest = find_closest_location(photo_time, locations)
             if closest:
                 add_gps_to_photo(photo_path, closest["latitude"], closest["longitude"])
                 added_count += 1
                 print(f"Added GPS data to: {photo_path}")
-        else:
-            print(f"No timestamp found for: {photo_path}")
+            else:
+                error_log.append(f"No location data found for: {photo_path}")
+        except Exception as e:
+            # キャッチされなかったエラーを記録
+            error_log.append(f"Error processing {photo_path}: {e}")
 
+        # Update progress bar
         progress["value"] = (i + 1) / total * 100
         root.update_idletasks()
 
-    return added_count, skipped_count
+    # エラー情報を出力
+    if error_log:
+        print("\n--- Error Log ---")
+        for error in error_log:
+            print(error)
+
+    return added_count, skipped_count, error_log
 
 
 # --- GUI Functions ---
@@ -138,6 +156,7 @@ def select_json():
 
 
 def run_process():
+    """Run the GPS data addition process."""
     folder = folder_path.get()
     json_file = json_path.get()
     if not folder or not json_file:
@@ -146,12 +165,17 @@ def run_process():
 
     try:
         progress_bar["value"] = 0
-        added_count, skipped_count = process_photos(folder, json_file, progress_bar)
-        messagebox.showinfo(
-            "Complete",
+        added_count, skipped_count, error_log = process_photos(folder, json_file, progress_bar)
+
+        # 結果を表示
+        result_message = (
             f"GPS data has been added to {added_count} photos.\n"
-            f"{skipped_count} photos were skipped (already had GPS)."
+            f"{skipped_count} photos were skipped (already had GPS).\n"
         )
+        if error_log:
+            result_message += f"{len(error_log)} photos could not be processed due to errors.\nCheck the console for details."
+
+        messagebox.showinfo("Complete", result_message)
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
