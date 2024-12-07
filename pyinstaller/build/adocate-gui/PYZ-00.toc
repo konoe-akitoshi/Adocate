@@ -1,4 +1,4 @@
-('C:\\Users\\akitoshi\\Documents\\GitHub\\Adocate\\app\\build\\adocate-gui\\PYZ-00.pyz',
+('C:\\Users\\akitoshi\\Documents\\GitHub\\Adocate\\pyinstaller\\build\\adocate-gui\\PYZ-00.pyz',
  [('PIL',
    'C:\\Users\\akitoshi\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PIL\\__init__.py',
    'PYMODULE'),
