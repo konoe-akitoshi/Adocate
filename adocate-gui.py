@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from core import process_photos
+import threading
 
 
 class App(ctk.CTk):
@@ -56,8 +57,9 @@ class App(ctk.CTk):
         self.progress_bar.set(0)
 
         # Run Button
-        ctk.CTkButton(frame, text="Run", command=self.run_process, width=200, height=40,
-                      font=ctk.CTkFont(size=16, weight="bold")).pack(pady=20)
+        self.run_button = ctk.CTkButton(frame, text="Run", command=self.run_in_thread, width=200, height=40,
+                                        font=ctk.CTkFont(size=16, weight="bold"))
+        self.run_button.pack(pady=20)
 
     def select_folder(self):
         """Open a dialog to select the folder containing photos."""
@@ -77,6 +79,11 @@ class App(ctk.CTk):
         self.progress_bar.set(progress_value)
         self.update_idletasks()
 
+    def run_in_thread(self):
+        """Run the photo processing logic in a separate thread."""
+        thread = threading.Thread(target=self.run_process, daemon=True)
+        thread.start()
+
     def run_process(self):
         """Run the photo processing logic."""
         folder = self.folder_path.get()
@@ -87,10 +94,13 @@ class App(ctk.CTk):
             return
 
         try:
+            self.run_button.configure(state="disabled")
             self.progress_bar.set(0)  # Reset progress bar
+
             added_count, skipped_count, error_log = process_photos(
                 folder, json_file, progress_callback=self.update_progress
             )
+
             result_message = (
                 f"GPS data added to {added_count} photos.\n"
                 f"{skipped_count} photos already had GPS data.\n"
@@ -102,6 +112,9 @@ class App(ctk.CTk):
 
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
+
+        finally:
+            self.run_button.configure(state="normal")
 
 
 # Run the app
