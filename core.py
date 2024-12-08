@@ -1,210 +1,126 @@
 import os
 import piexif
 from datetime import datetime, timezone, timedelta
-import json
-import re
-from PIL import Image
-from PIL.ExifTags import TAGS
+from parsers import LocationParserFactory
 
+def find_photos_recursively(directory):
+    """Recursively find all photo files in a directory."""
+    photo_files = []
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.lower().endswith(('.jpg', '.jpeg')):
+                full_path = os.path.join(root, file)
+                if os.access(full_path, os.R_OK):
+                    photo_files.append(full_path)
+                else:
+                    print(f"Cannot access file: {full_path}")
+    return photo_files
 
-def parse_timestamp(timestamp):
-    """Convert ISO 8601 timestamp to datetime object."""
-    return datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%f%z")
+def get_photo_timestamp(photo_path):
+    """Get timestamp from photo's EXIF data."""
+    from PIL import Image, ExifTags
 
-
-def parse_nmea_time(nmea_time):
-    """Parse NMEA time format (hhmmss.ss) into timedelta."""
     try:
-        hours = int(nmea_time[:2])
-        minutes = int(nmea_time[2:4])
-        seconds = float(nmea_time[4:])
-        return timedelta(hours=hours, minutes=minutes, seconds=seconds)
-    except (ValueError, IndexError):
-        return None
-
-
-def parse_nmea_date(nmea_date):
-    """Parse NMEA date format (ddmmyy) into a datetime object."""
-    try:
-        day = int(nmea_date[:2])
-        month = int(nmea_date[2:4])
-        year = 2000 + int(nmea_date[4:])  # Assume 21st century
-        return datetime(year, month, day)
-    except (ValueError, IndexError):
-        return None
-
-
-def parse_nmea(nmea_file):
-    """
-    Parse NMEA log file for GPS data.
-    Extracts latitude, longitude, and UTC timestamp from $GPRMC sentences.
-    """
-    locations = []
-    try:
-        with open(nmea_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        for line in lines:
-            if line.startswith("$GPRMC") or line.startswith("$GNRMC"):
-                parts = line.split(",")
-                if len(parts) < 12 or parts[2] != "A":  # Ensure valid data
-                    continue
-                
-                # Extract time (hhmmss.ss) and date (ddmmyy)
-                nmea_time = parse_nmea_time(parts[1])
-                nmea_date = parse_nmea_date(parts[9])
-                if not nmea_time or not nmea_date:
-                    continue
-                timestamp = datetime.combine(nmea_date, datetime.min.time(), tzinfo=timezone.utc) + nmea_time
-
-                # Extract latitude and longitude
-                latitude = nmea_to_decimal(parts[3], parts[4])  # dddmm.mmmm, N/S
-                longitude = nmea_to_decimal(parts[5], parts[6])  # dddmm.mmmm, E/W
-                if latitude is None or longitude is None:
-                    continue
-
-                # Append to locations
-                locations.append({
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "timestamp": timestamp
-                })
-
+        img = Image.open(photo_path)
+        exif_data = img._getexif()
+        if exif_data:
+            for tag, value in exif_data.items():
+                if ExifTags.TAGS.get(tag) == "DateTimeOriginal":
+                    return datetime.strptime(value, "%Y:%m:%d %H:%M:%S").replace(tzinfo=timezone.utc)
     except Exception as e:
-        print(f"Error parsing NMEA file: {e}")
-    return locations
-
-
-def nmea_to_decimal(value, direction):
-    """Convert NMEA latitude/longitude (dddmm.mmmm) to decimal degrees."""
-    try:
-        # Latitude is DDMM.MMMM, Longitude is DDDMM.MMMM
-        if len(value.split(".")[0]) <= 4:  # Latitude (DDMM.MMMM)
-            degrees = int(value[:2])
-            minutes = float(value[2:])
-        else:  # Longitude (DDDMM.MMMM)
-            degrees = int(value[:3])
-            minutes = float(value[3:])
-
-        decimal = degrees + (minutes / 60)
-        if direction in ("S", "W"):  # South or West means negative
-            decimal *= -1
-        return decimal
-    except (ValueError, IndexError):
-        return None
-
-
-def parse_segments(json_file):
-    """Extract location data (latitude, longitude, timestamp) from JSON file."""
-    with open(json_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    locations = []
-    for segment in data.get("semanticSegments", []):
-        for path in segment.get("timelinePath", []):
-            try:
-                point = re.sub(r"[^\d.,-]", "", path["point"])
-                lat, lng = map(float, point.split(","))
-                timestamp = parse_timestamp(path["time"])
-                locations.append({"latitude": lat, "longitude": lng, "timestamp": timestamp})
-            except (ValueError, AttributeError):
-                continue
-    return locations
-
-
-def find_closest_location(photo_time, locations):
-    """Find the location with the timestamp closest to the given photo timestamp."""
-    return min(locations, key=lambda loc: abs(photo_time - loc["timestamp"]), default=None)
-
-
-def convert_to_dms(degree):
-    """Convert decimal degrees to degrees, minutes, and seconds."""
-    degrees = int(degree)
-    minutes = int((degree - degrees) * 60)
-    seconds = round((degree - degrees - minutes / 60) * 3600, 5)
-    return degrees, minutes, seconds
-
-
-def create_gps_ifd(lat, lng):
-    """Create GPS data structure for EXIF."""
-    lat_dms = convert_to_dms(abs(lat))
-    lng_dms = convert_to_dms(abs(lng))
-    return {
-        piexif.GPSIFD.GPSLatitudeRef: b'N' if lat >= 0 else b'S',
-        piexif.GPSIFD.GPSLatitude: [(lat_dms[0], 1), (lat_dms[1], 1), (int(lat_dms[2] * 10000), 10000)],
-        piexif.GPSIFD.GPSLongitudeRef: b'E' if lng >= 0 else b'W',
-        piexif.GPSIFD.GPSLongitude: [(lng_dms[0], 1), (lng_dms[1], 1), (int(lng_dms[2] * 10000), 10000)],
-    }
-
+        print(f"Error reading timestamp from {photo_path}: {e}")
+    return None
 
 def has_gps_data(photo_path):
     """Check if the photo already contains valid GPS data."""
     try:
         exif_dict = piexif.load(photo_path)
         gps_data = exif_dict.get("GPS", {})
-        return piexif.GPSIFD.GPSLatitude in gps_data and piexif.GPSIFD.GPSLongitude in gps_data
-    except Exception:
-        return False
+        if gps_data and piexif.GPSIFD.GPSLatitude in gps_data and piexif.GPSIFD.GPSLongitude in gps_data:
+            return True
+    except Exception as e:
+        print(f"Error checking GPS data for {photo_path}: {e}")
+    return False
 
+def create_gps_ifd(lat, lng):
+    """Create GPS IFD (Image File Directory)."""
+    def convert_to_dms(degree):
+        degrees = int(degree)
+        minutes = int((degree - degrees) * 60)
+        seconds = round((degree - degrees - minutes / 60) * 3600, 5)
+        return degrees, minutes, seconds
+
+    lat_dms = convert_to_dms(abs(lat))
+    lng_dms = convert_to_dms(abs(lng))
+
+    gps_ifd = {
+        piexif.GPSIFD.GPSLatitudeRef: b'N' if lat >= 0 else b'S',
+        piexif.GPSIFD.GPSLatitude: [(lat_dms[0], 1), (lat_dms[1], 1), (int(lat_dms[2] * 10000), 10000)],
+        piexif.GPSIFD.GPSLongitudeRef: b'E' if lng >= 0 else b'W',
+        piexif.GPSIFD.GPSLongitude: [(lng_dms[0], 1), (lng_dms[1], 1), (int(lng_dms[2] * 10000), 10000)],
+    }
+    return gps_ifd
 
 def add_gps_to_photo(photo_path, lat, lng):
-    """Add GPS data to the specified photo."""
-    gps_ifd = create_gps_ifd(lat, lng)
-    exif_dict = piexif.load(photo_path)
-    exif_dict["GPS"] = gps_ifd
-    piexif.insert(piexif.dump(exif_dict), photo_path)
-
-
-def get_photo_timestamp(photo_path):
-    """Retrieve the timestamp from the photo's EXIF data."""
+    """Add GPS information to a photo."""
     try:
-        img = Image.open(photo_path)
-        exif_data = img._getexif()
-        if exif_data:
-            for tag, value in exif_data.items():
-                if TAGS.get(tag) == "DateTimeOriginal":
-                    return datetime.strptime(value, "%Y:%m:%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=9)))
-    except Exception:
-        pass
-    return None
+        gps_ifd = create_gps_ifd(lat, lng)
+        exif_dict = piexif.load(photo_path)
+        exif_dict["GPS"] = gps_ifd
+        exif_bytes = piexif.dump(exif_dict)
+        piexif.insert(exif_bytes, photo_path)
+    except Exception as e:
+        print(f"Failed to add GPS data to {photo_path}: {e}")
 
+def parse_location_files(location_files):
+    """Parse multiple location files and return a unified list of GPX-style data."""
+    all_locations = []
+    for file_path in location_files:
+        try:
+            parser = LocationParserFactory.get_parser(file_path)
+            all_locations.extend(parser.parse(file_path))
+        except Exception as e:
+            print(f"Error parsing file {file_path}: {e}")
+    # Sort locations by timestamp
+    all_locations.sort(key=lambda loc: loc["timestamp"])
+    return all_locations
 
-def find_photos_recursively(directory):
-    """Recursively find all photo files in the directory."""
-    photo_files = []
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if file.lower().endswith((".jpg", ".jpeg")):
-                photo_files.append(os.path.join(root, file))
-    return photo_files
+def find_closest_location(photo_time, locations):
+    """Find the closest location by timestamp."""
+    closest_location = None
+    min_diff = timedelta.max
+    for loc in locations:
+        time_diff = abs(photo_time - loc["timestamp"])
+        if time_diff < min_diff:
+            min_diff = time_diff
+            closest_location = loc
+    return closest_location
 
-
-def process_photos(photo_dir, all_locations, progress_callback=None, overwrite=False):
-    """Process all photos to add GPS data, using a unified location data list."""
-    from PIL import Image
-    import piexif
-
+def process_photos(photo_dir, location_files, progress_callback=None, overwrite=False):
+    """Process photos and add GPS data using unified GPX-style location data."""
     photo_files = find_photos_recursively(photo_dir)
-    total = len(photo_files)
+    print(f"Found {len(photo_files)} photos.")
 
-    added_count = 0
-    skipped_count = 0
-    error_log = []
+    all_locations = parse_location_files(location_files)
+    print(f"Loaded {len(all_locations)} location points.")
+
+    total = len(photo_files)
+    added_count, skipped_count, error_log = 0, 0, []
 
     for i, photo_path in enumerate(photo_files, start=1):
         try:
-            # Check if the photo already has GPS data
+            # Skip if GPS data exists and overwrite is not enabled
             if not overwrite and has_gps_data(photo_path):
                 skipped_count += 1
                 continue
 
-            # Get the photo timestamp
+            # Get photo timestamp
             photo_time = get_photo_timestamp(photo_path)
             if not photo_time:
                 error_log.append(f"No timestamp found for: {photo_path}")
                 continue
 
-            # Find the closest location data by timestamp
+            # Find the closest location data
             closest = find_closest_location(photo_time, all_locations)
             if closest:
                 add_gps_to_photo(photo_path, closest["latitude"], closest["longitude"])
@@ -219,3 +135,32 @@ def process_photos(photo_dir, all_locations, progress_callback=None, overwrite=F
             progress_callback(i, total)
 
     return added_count, skipped_count, error_log
+
+def export_to_gpx(locations, output_file):
+    """Export unified location data to a GPX file."""
+    import xml.etree.ElementTree as ET
+
+    gpx = ET.Element("gpx", attrib={
+        "version": "1.1",
+        "creator": "Adocate",
+        "xmlns": "http://www.topografix.com/GPX/1/1",
+        "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+        "xsi:schemaLocation": (
+            "http://www.topografix.com/GPX/1/1 "
+            "http://www.topografix.com/GPX/1/1/gpx.xsd"
+        ),
+    })
+
+    trk = ET.SubElement(gpx, "trk")
+    ET.SubElement(trk, "name").text = "Combined Location Data"
+
+    trkseg = ET.SubElement(trk, "trkseg")
+    for loc in locations:
+        trkpt = ET.SubElement(trkseg, "trkpt", attrib={
+            "lat": f"{loc['latitude']}",
+            "lon": f"{loc['longitude']}"
+        })
+        ET.SubElement(trkpt, "time").text = loc["timestamp"].isoformat()
+
+    tree = ET.ElementTree(gpx)
+    tree.write(output_file, encoding="utf-8", xml_declaration=True)
