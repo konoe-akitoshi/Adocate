@@ -1,212 +1,167 @@
-import os
-import piexif
-from datetime import datetime, timezone, timedelta
-import json
-import re
-from tkinter import Tk, StringVar, messagebox, filedialog
-from tkinter.ttk import Label, Button, Entry, Frame, Progressbar, Style
-from PIL import Image
-from PIL.ExifTags import TAGS
+import customtkinter as ctk
+from tkinter import filedialog, messagebox
+from core import process_photos, parse_location_files, export_to_gpx
+import threading
 
 
-# --- Utility Functions ---
-def parse_timestamp(timestamp):
-    """Convert ISO 8601 timestamp to datetime object."""
-    return datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%f%z")
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
 
+        # Window setup
+        self.title("Adocate - Add GPS Data to Photos")
+        self.geometry("750x600")
+        self.resizable(False, False)
 
-def parse_segments(json_file):
-    """Extract location data (latitude, longitude, timestamp) from JSON file."""
-    with open(json_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        # Theme setup
+        ctk.set_appearance_mode("System")
+        ctk.set_default_color_theme("blue")
 
-    locations = []
-    for segment in data.get("semanticSegments", []):
-        for path in segment.get("timelinePath", []):
-            try:
-                point = re.sub(r"[^\d.,-]", "", path["point"])
-                lat, lng = map(float, point.split(","))
-                timestamp = parse_timestamp(path["time"])
-                locations.append({"latitude": lat, "longitude": lng, "timestamp": timestamp})
-            except (ValueError, AttributeError):
-                continue
-    return locations
+        # Variables
+        self.folder_path = ctk.StringVar()
+        self.location_file_paths = []  # List to hold multiple location files
+        self.unified_locations = []  # Holds unified location data
+        self.overwrite_gps = ctk.BooleanVar(value=False)  # Overwrite GPS flag
 
+        # UI setup
+        self.create_widgets()
 
-def find_closest_location(photo_time, locations):
-    """Find the location with the timestamp closest to the given photo timestamp."""
-    return min(locations, key=lambda loc: abs(photo_time - loc["timestamp"]), default=None)
+    def create_widgets(self):
+        """Set up the UI components."""
+        # Main frame
+        main_frame = ctk.CTkFrame(self, corner_radius=15)
+        main_frame.pack(pady=20, padx=20, fill="both", expand=True)
 
+        # Title
+        ctk.CTkLabel(main_frame, text="Adocate", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 5))
+        ctk.CTkLabel(main_frame, text="Add GPS data to your photos using various location files.",
+                     font=ctk.CTkFont(size=14)).pack(pady=(0, 20))
 
-def convert_to_dms(degree):
-    """Convert decimal degrees to degrees, minutes, and seconds."""
-    degrees = int(degree)
-    minutes = int((degree - degrees) * 60)
-    seconds = round((degree - degrees - minutes / 60) * 3600, 5)
-    return degrees, minutes, seconds
+        # Photo Folder Input
+        folder_frame = ctk.CTkFrame(main_frame, corner_radius=10)
+        folder_frame.pack(pady=10, padx=10, fill="x")
 
+        ctk.CTkLabel(folder_frame, text="Photo Folder:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkEntry(folder_frame, textvariable=self.folder_path, width=400).grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        ctk.CTkButton(folder_frame, text="Select", command=self.select_folder, width=100).grid(row=0, column=2, padx=10, pady=10)
 
-def create_gps_ifd(lat, lng):
-    """Create GPS data structure for EXIF."""
-    lat_dms = convert_to_dms(abs(lat))
-    lng_dms = convert_to_dms(abs(lng))
-    return {
-        piexif.GPSIFD.GPSLatitudeRef: b'N' if lat >= 0 else b'S',
-        piexif.GPSIFD.GPSLatitude: [(lat_dms[0], 1), (lat_dms[1], 1), (int(lat_dms[2] * 10000), 10000)],
-        piexif.GPSIFD.GPSLongitudeRef: b'E' if lng >= 0 else b'W',
-        piexif.GPSIFD.GPSLongitude: [(lng_dms[0], 1), (lng_dms[1], 1), (int(lng_dms[2] * 10000), 10000)],
-    }
+        # Location Files Input
+        file_frame = ctk.CTkFrame(main_frame, corner_radius=10)
+        file_frame.pack(pady=10, padx=10, fill="x")
 
+        # Location Files Label
+        ctk.CTkLabel(file_frame, text="Location Files:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
 
-def has_gps_data(photo_path):
-    """Check if the photo already contains valid GPS data."""
-    try:
-        exif_dict = piexif.load(photo_path)
-        gps_data = exif_dict.get("GPS", {})
-        return piexif.GPSIFD.GPSLatitude in gps_data and piexif.GPSIFD.GPSLongitude in gps_data
-    except Exception as e:
-        print(f"Error checking GPS data for {photo_path}: {e}")
-        return False
+        # File List Box
+        self.file_list = ctk.CTkTextbox(file_frame, height=150, width=400, state="normal")
+        self.file_list.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
 
+        # Button Controls
+        control_frame = ctk.CTkFrame(file_frame, corner_radius=10)
+        control_frame.grid(row=1, column=1, padx=10, pady=10, sticky="n")
 
-def add_gps_to_photo(photo_path, lat, lng):
-    """Add GPS data to the specified photo."""
-    gps_ifd = create_gps_ifd(lat, lng)
-    exif_dict = piexif.load(photo_path)
-    exif_dict["GPS"] = gps_ifd
-    piexif.insert(piexif.dump(exif_dict), photo_path)
+        ctk.CTkButton(control_frame, text="Add", command=self.select_location_files, width=150).pack(pady=(0, 5))
+        ctk.CTkButton(control_frame, text="Remove Selected", command=self.remove_selected_file, width=150).pack(pady=5)
+        ctk.CTkButton(control_frame, text="Clear All", command=self.clear_all_files, width=150).pack(pady=5)
+        ctk.CTkButton(control_frame, text="Export GPX", command=self.export_gpx, width=150).pack(pady=(5, 0))
 
+        # Overwrite Option
+        ctk.CTkCheckBox(main_frame, text="Overwrite existing GPS data", variable=self.overwrite_gps).pack(pady=10)
 
-def get_photo_timestamp(photo_path):
-    """Retrieve the timestamp from the photo's EXIF data."""
-    try:
-        img = Image.open(photo_path)
-        exif_data = img._getexif()
-        if exif_data:
-            for tag, value in exif_data.items():
-                if TAGS.get(tag) == "DateTimeOriginal":
-                    return datetime.strptime(value, "%Y:%m:%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=9)))
-    except Exception as e:
-        print(f"Error reading timestamp for {photo_path}: {e}")
-    return None
+        # Progress Bar
+        self.progress_bar = ctk.CTkProgressBar(main_frame, orientation="horizontal", mode="determinate", width=500)
+        self.progress_bar.pack(pady=20)
+        self.progress_bar.set(0)
 
+        # Run Button
+        self.run_button = ctk.CTkButton(main_frame, text="Run", command=self.run_in_thread, width=200, height=40,
+                                        font=ctk.CTkFont(size=16, weight="bold"))
+        self.run_button.pack(pady=20)
 
-def process_photos(photo_dir, json_file, progress):
-    """Process all photos in the directory to add GPS data."""
-    locations = parse_segments(json_file)
-    photos = [f for f in os.listdir(photo_dir) if f.lower().endswith((".jpg", ".jpeg"))]
-    total = len(photos)
+    def select_folder(self):
+        folder = filedialog.askdirectory(title="Select a Photo Folder")
+        if folder:
+            self.folder_path.set(folder)
 
-    added_count = 0
-    skipped_count = 0
-    error_log = []  # エラーログリストを作成
+    def select_location_files(self):
+        files = filedialog.askopenfilenames(filetypes=[("All Files", "*.*")], title="Select Location Files")
+        if files:
+            self.location_file_paths.extend(files)
+            self.update_file_list()
 
-    for i, photo_file in enumerate(photos):
-        photo_path = os.path.join(photo_dir, photo_file)
+    def update_file_list(self):
+        self.file_list.configure(state="normal")
+        self.file_list.delete("1.0", "end")
+        for file_path in self.location_file_paths:
+            self.file_list.insert("end", f"{file_path}\n")
+        self.file_list.configure(state="disabled")
+
+    def remove_selected_file(self):
+        selected_text = self.file_list.get("sel.first", "sel.last").strip()
+        if selected_text in self.location_file_paths:
+            self.location_file_paths.remove(selected_text)
+            self.update_file_list()
+
+    def clear_all_files(self):
+        self.location_file_paths.clear()
+        self.update_file_list()
+
+    def update_progress(self, current, total):
+        progress_value = current / total
+        self.progress_bar.set(progress_value)
+        self.update_idletasks()
+
+    def run_in_thread(self):
+        thread = threading.Thread(target=self.run_process, daemon=True)
+        thread.start()
+
+    def run_process(self):
+        folder = self.folder_path.get()
+        if not folder or not self.location_file_paths:
+            messagebox.showerror("Error", "Please specify both a photo folder and at least one location file.")
+            return
 
         try:
-            # Check if the photo already contains GPS data
-            if has_gps_data(photo_path):
-                skipped_count += 1
-                print(f"Skipping photo (already has GPS): {photo_path}")
-                continue
+            self.run_button.configure(state="disabled")
+            self.progress_bar.set(0)
 
-            # Get timestamp from photo
-            photo_time = get_photo_timestamp(photo_path)
-            if not photo_time:
-                error_log.append(f"No timestamp found for: {photo_path}")
-                continue
+            self.unified_locations = parse_location_files(self.location_file_paths)
+            added_count, skipped_count, error_log = process_photos(
+                folder, self.location_file_paths, progress_callback=self.update_progress, overwrite=self.overwrite_gps.get()
+            )
 
-            # Find the closest location and add GPS data
-            closest = find_closest_location(photo_time, locations)
-            if closest:
-                add_gps_to_photo(photo_path, closest["latitude"], closest["longitude"])
-                added_count += 1
-                print(f"Added GPS data to: {photo_path}")
-            else:
-                error_log.append(f"No location data found for: {photo_path}")
+            result_message = (
+                f"GPS data added to {added_count} photos.\n"
+                f"{skipped_count} photos were skipped.\n"
+            )
+            if error_log:
+                result_message += f"{len(error_log)} photos could not be processed. Check the console for details."
+
+            messagebox.showinfo("Complete", result_message)
+
         except Exception as e:
-            # キャッチされなかったエラーを記録
-            error_log.append(f"Error processing {photo_path}: {e}")
+            messagebox.showerror("Error", f"An error occurred: {e}")
 
-        # Update progress bar
-        progress["value"] = (i + 1) / total * 100
-        root.update_idletasks()
+        finally:
+            self.run_button.configure(state="normal")
 
-    # エラー情報を出力
-    if error_log:
-        print("\n--- Error Log ---")
-        for error in error_log:
-            print(error)
+    def export_gpx(self):
+        if not self.location_file_paths:
+            messagebox.showerror("Error", "Please specify at least one location file.")
+            return
 
-    return added_count, skipped_count, error_log
-
-
-# --- GUI Functions ---
-def select_folder():
-    folder = filedialog.askdirectory(title="Select a Photo Folder")
-    if folder:
-        folder_path.set(folder)
-
-
-def select_json():
-    file = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")], title="Select a JSON File")
-    if file:
-        json_path.set(file)
+        try:
+            self.unified_locations = parse_location_files(self.location_file_paths)
+            output_file = filedialog.asksaveasfilename(
+                defaultextension=".gpx", filetypes=[("GPX Files", "*.gpx")], title="Save GPX File"
+            )
+            if output_file:
+                export_to_gpx(self.unified_locations, output_file)
+                messagebox.showinfo("Success", f"GPX file saved to {output_file}.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export GPX: {e}")
 
 
-def run_process():
-    """Run the GPS data addition process."""
-    folder = folder_path.get()
-    json_file = json_path.get()
-    if not folder or not json_file:
-        messagebox.showerror("Error", "Please specify both a photo folder and a JSON file.")
-        return
-
-    try:
-        progress_bar["value"] = 0
-        added_count, skipped_count, error_log = process_photos(folder, json_file, progress_bar)
-
-        # 結果を表示
-        result_message = (
-            f"GPS data has been added to {added_count} photos.\n"
-            f"{skipped_count} photos were skipped (already had GPS).\n"
-        )
-        if error_log:
-            result_message += f"{len(error_log)} photos could not be processed due to errors.\nCheck the console for details."
-
-        messagebox.showinfo("Complete", result_message)
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {e}")
-
-
-# --- GUI Setup ---
-root = Tk()
-root.title("GPS Adder Tool")
-root.geometry("500x250")
-root.resizable(False, False)
-
-style = Style()
-style.configure("TLabel", font=("Segoe UI", 11))
-style.configure("TButton", font=("Segoe UI", 10))
-
-frame = Frame(root, padding=10)
-frame.grid(row=0, column=0, sticky="nsew")
-
-folder_path = StringVar()
-json_path = StringVar()
-
-Label(frame, text="Photo Folder:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
-Entry(frame, textvariable=folder_path, width=40).grid(row=0, column=1, padx=10, pady=10, sticky="w")
-Button(frame, text="Select Folder", command=select_folder).grid(row=0, column=2, padx=10, pady=10)
-
-Label(frame, text="JSON File:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
-Entry(frame, textvariable=json_path, width=40).grid(row=1, column=1, padx=10, pady=10, sticky="w")
-Button(frame, text="Select JSON", command=select_json).grid(row=1, column=2, padx=10, pady=10)
-
-progress_bar = Progressbar(frame, orient="horizontal", mode="determinate", length=400)
-progress_bar.grid(row=2, column=0, columnspan=3, padx=10, pady=20)
-
-Button(frame, text="Run", command=run_process).grid(row=3, column=0, columnspan=3, pady=20)
-
-root.mainloop()
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
