@@ -179,7 +179,7 @@ def find_photos_recursively(directory):
     return photo_files
 
 
-def process_photos(photo_dir, all_locations, progress_callback=None):
+def process_photos(photo_dir, all_locations, progress_callback=None, overwrite=False):
     """Process all photos to add GPS data, using a unified location data list."""
     from PIL import Image
     import piexif
@@ -193,8 +193,8 @@ def process_photos(photo_dir, all_locations, progress_callback=None):
 
     for i, photo_path in enumerate(photo_files, start=1):
         try:
-            # Skip photos that already have GPS data
-            if has_gps_data(photo_path):
+            # Check if the photo already has GPS data
+            if not overwrite and has_gps_data(photo_path):
                 skipped_count += 1
                 continue
 
