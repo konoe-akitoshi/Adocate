@@ -28,15 +28,17 @@ class App(ctk.CTk):
 
     def create_widgets(self):
         """Set up the UI components."""
-        frame = ctk.CTkFrame(self, corner_radius=15)
-        frame.pack(pady=20, padx=20, fill="both", expand=True)
+        # Main frame
+        main_frame = ctk.CTkFrame(self, corner_radius=15)
+        main_frame.pack(pady=20, padx=20, fill="both", expand=True)
 
-        ctk.CTkLabel(frame, text="Adocate", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 5))
-        ctk.CTkLabel(frame, text="Add GPS data to your photos using various location files.",
+        # Title
+        ctk.CTkLabel(main_frame, text="Adocate", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 5))
+        ctk.CTkLabel(main_frame, text="Add GPS data to your photos using various location files.",
                      font=ctk.CTkFont(size=14)).pack(pady=(0, 20))
 
         # Photo Folder Input
-        folder_frame = ctk.CTkFrame(frame, corner_radius=10)
+        folder_frame = ctk.CTkFrame(main_frame, corner_radius=10)
         folder_frame.pack(pady=10, padx=10, fill="x")
 
         ctk.CTkLabel(folder_frame, text="Photo Folder:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
@@ -44,33 +46,37 @@ class App(ctk.CTk):
         ctk.CTkButton(folder_frame, text="Select", command=self.select_folder, width=100).grid(row=0, column=2, padx=10, pady=10)
 
         # Location Files Input
-        file_frame = ctk.CTkFrame(frame, corner_radius=10)
+        file_frame = ctk.CTkFrame(main_frame, corner_radius=10)
         file_frame.pack(pady=10, padx=10, fill="x")
 
-        ctk.CTkLabel(file_frame, text="Location Files:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        ctk.CTkButton(file_frame, text="Select", command=self.select_location_files, width=100).grid(row=0, column=2, padx=10, pady=10)
+        # Location Files Label
+        ctk.CTkLabel(file_frame, text="Location Files:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
 
-        self.file_list = ctk.CTkTextbox(file_frame, height=150, width=550, state="normal")
-        self.file_list.grid(row=1, column=0, columnspan=3, padx=10, pady=10)
+        # File List Box
+        self.file_list = ctk.CTkTextbox(file_frame, height=150, width=400, state="normal")
+        self.file_list.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+
+        # Button Controls
+        control_frame = ctk.CTkFrame(file_frame, corner_radius=10)
+        control_frame.grid(row=1, column=1, padx=10, pady=10, sticky="n")
+
+        ctk.CTkButton(control_frame, text="Add", command=self.select_location_files, width=150).pack(pady=(0, 5))
+        ctk.CTkButton(control_frame, text="Remove Selected", command=self.remove_selected_file, width=150).pack(pady=5)
+        ctk.CTkButton(control_frame, text="Clear All", command=self.clear_all_files, width=150).pack(pady=5)
+        ctk.CTkButton(control_frame, text="Export GPX", command=self.export_gpx, width=150).pack(pady=(5, 0))
 
         # Overwrite Option
-        ctk.CTkCheckBox(frame, text="Overwrite existing GPS data", variable=self.overwrite_gps).pack(pady=10)
+        ctk.CTkCheckBox(main_frame, text="Overwrite existing GPS data", variable=self.overwrite_gps).pack(pady=10)
 
         # Progress Bar
-        self.progress_bar = ctk.CTkProgressBar(frame, orientation="horizontal", mode="determinate", width=500)
+        self.progress_bar = ctk.CTkProgressBar(main_frame, orientation="horizontal", mode="determinate", width=500)
         self.progress_bar.pack(pady=20)
         self.progress_bar.set(0)
 
-        # Run and Export Buttons
-        button_frame = ctk.CTkFrame(frame, corner_radius=10)
-        button_frame.pack(pady=20, fill="x")
-
-        self.run_button = ctk.CTkButton(button_frame, text="Run", command=self.run_in_thread, width=150, height=40,
+        # Run Button
+        self.run_button = ctk.CTkButton(main_frame, text="Run", command=self.run_in_thread, width=200, height=40,
                                         font=ctk.CTkFont(size=16, weight="bold"))
-        self.run_button.pack(side="left", padx=20)
-
-        ctk.CTkButton(button_frame, text="Export GPX", command=self.export_gpx, width=150, height=40,
-                      font=ctk.CTkFont(size=16, weight="bold")).pack(side="right", padx=20)
+        self.run_button.pack(pady=20)
 
     def select_folder(self):
         folder = filedialog.askdirectory(title="Select a Photo Folder")
@@ -89,6 +95,16 @@ class App(ctk.CTk):
         for file_path in self.location_file_paths:
             self.file_list.insert("end", f"{file_path}\n")
         self.file_list.configure(state="disabled")
+
+    def remove_selected_file(self):
+        selected_text = self.file_list.get("sel.first", "sel.last").strip()
+        if selected_text in self.location_file_paths:
+            self.location_file_paths.remove(selected_text)
+            self.update_file_list()
+
+    def clear_all_files(self):
+        self.location_file_paths.clear()
+        self.update_file_list()
 
     def update_progress(self, current, total):
         progress_value = current / total
