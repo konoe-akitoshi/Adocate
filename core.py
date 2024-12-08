@@ -13,7 +13,7 @@ def parse_timestamp(timestamp):
 
 
 def parse_nmea_time(nmea_time):
-    """Parse NMEA time format (hhmmss.ss) to a datetime object."""
+    """Parse NMEA time format (hhmmss.ss) into timedelta."""
     try:
         hours = int(nmea_time[:2])
         minutes = int(nmea_time[2:4])
@@ -24,51 +24,70 @@ def parse_nmea_time(nmea_time):
 
 
 def parse_nmea_date(nmea_date):
-    """Parse NMEA date format (ddmmyy) to a datetime object."""
+    """Parse NMEA date format (ddmmyy) into a datetime object."""
     try:
         day = int(nmea_date[:2])
         month = int(nmea_date[2:4])
-        year = 2000 + int(nmea_date[4:])  # Assume dates are in 2000s
+        year = 2000 + int(nmea_date[4:])  # Assume 21st century
         return datetime(year, month, day)
     except (ValueError, IndexError):
         return None
 
 
 def parse_nmea(nmea_file):
-    """Parse NMEA log file for GPS data."""
+    """
+    Parse NMEA log file for GPS data.
+    Extracts latitude, longitude, and UTC timestamp from $GPRMC sentences.
+    """
     locations = []
     try:
         with open(nmea_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        current_date = None
         for line in lines:
             if line.startswith("$GPRMC") or line.startswith("$GNRMC"):
                 parts = line.split(",")
-                if parts[2] == "A":  # Check for valid data
-                    time = parse_nmea_time(parts[1])
-                    date = parse_nmea_date(parts[9])
-                    if time and date:
-                        timestamp = datetime.combine(date, datetime.min.time(), tzinfo=timezone.utc) + time
-                        latitude = nmea_to_decimal(parts[3], parts[4])
-                        longitude = nmea_to_decimal(parts[5], parts[6])
-                        locations.append({
-                            "latitude": latitude,
-                            "longitude": longitude,
-                            "timestamp": timestamp
-                        })
+                if len(parts) < 12 or parts[2] != "A":  # Ensure valid data
+                    continue
+                
+                # Extract time (hhmmss.ss) and date (ddmmyy)
+                nmea_time = parse_nmea_time(parts[1])
+                nmea_date = parse_nmea_date(parts[9])
+                if not nmea_time or not nmea_date:
+                    continue
+                timestamp = datetime.combine(nmea_date, datetime.min.time(), tzinfo=timezone.utc) + nmea_time
+
+                # Extract latitude and longitude
+                latitude = nmea_to_decimal(parts[3], parts[4])  # dddmm.mmmm, N/S
+                longitude = nmea_to_decimal(parts[5], parts[6])  # dddmm.mmmm, E/W
+                if latitude is None or longitude is None:
+                    continue
+
+                # Append to locations
+                locations.append({
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "timestamp": timestamp
+                })
+
     except Exception as e:
         print(f"Error parsing NMEA file: {e}")
     return locations
 
 
 def nmea_to_decimal(value, direction):
-    """Convert NMEA latitude/longitude to decimal degrees."""
+    """Convert NMEA latitude/longitude (dddmm.mmmm) to decimal degrees."""
     try:
-        degrees = int(value[:2])
-        minutes = float(value[2:])
-        decimal = degrees + minutes / 60
-        if direction in ("S", "W"):
+        # Latitude is DDMM.MMMM, Longitude is DDDMM.MMMM
+        if len(value.split(".")[0]) <= 4:  # Latitude (DDMM.MMMM)
+            degrees = int(value[:2])
+            minutes = float(value[2:])
+        else:  # Longitude (DDDMM.MMMM)
+            degrees = int(value[:3])
+            minutes = float(value[3:])
+
+        decimal = degrees + (minutes / 60)
+        if direction in ("S", "W"):  # South or West means negative
             decimal *= -1
         return decimal
     except (ValueError, IndexError):
