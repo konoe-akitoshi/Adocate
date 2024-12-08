@@ -1,8 +1,18 @@
+import os
+import sys
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
 from core import process_photos, parse_location_files, export_to_gpx
 import threading
+from tkinter import filedialog, messagebox
 
+def resource_path(relative_path):
+    """Get the absolute path to the resource, compatible with PyInstaller."""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class App(ctk.CTk):
     def __init__(self):
@@ -13,18 +23,29 @@ class App(ctk.CTk):
         self.geometry("750x600")
         self.resizable(False, False)
 
+        # Set the application icon
+        self.set_icon()
+
         # Theme setup
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
         # Variables
         self.folder_path = ctk.StringVar()
-        self.location_file_paths = []  # List to hold multiple location files
-        self.unified_locations = []  # Holds unified location data
-        self.overwrite_gps = ctk.BooleanVar(value=False)  # Overwrite GPS flag
+        self.location_file_paths = []
+        self.unified_locations = []
+        self.overwrite_gps = ctk.BooleanVar(value=False)
 
         # UI setup
         self.create_widgets()
+
+    def set_icon(self):
+        """Set the application icon using a .ico file."""
+        try:
+            icon_path = resource_path("adocate.ico")
+            self.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"Failed to set .ico icon: {e}")
 
     def create_widgets(self):
         """Set up the UI components."""

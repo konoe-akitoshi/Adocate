@@ -1,3 +1,4 @@
+import os
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from core import process_photos, parse_location_files, export_to_gpx
@@ -12,7 +13,11 @@ class App(ctk.CTk):
         self.title("Adocate - Add GPS Data to Photos")
         self.geometry("750x600")
         self.resizable(False, False)
-
+        
+        # Set the application icon with an absolute path
+        icon_path = os.path.join(os.path.dirname(__file__), "adocate.ico")
+        self.iconbitmap(icon_path)
+        
         # Theme setup
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
