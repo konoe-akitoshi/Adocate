@@ -97,7 +97,7 @@ def find_photos_recursively(directory):
     return photo_files
 
 
-def process_photos(photo_dir, json_file):
+def process_photos(photo_dir, json_file, progress_callback=None):
     """Process all photos in the directory and its subdirectories to add GPS data."""
     locations = parse_segments(json_file)
     photo_files = find_photos_recursively(photo_dir)
@@ -126,5 +126,9 @@ def process_photos(photo_dir, json_file):
                 error_log.append(f"No location data found for: {photo_path}")
         except Exception as e:
             error_log.append(f"Error processing {photo_path}: {e}")
+
+        # Update progress
+        if progress_callback:
+            progress_callback(i, total)
 
     return added_count, skipped_count, error_log

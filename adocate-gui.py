@@ -40,7 +40,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(folder_frame, text="Photo Folder:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
         ctk.CTkEntry(folder_frame, textvariable=self.folder_path, width=400).grid(row=0, column=1, padx=10, pady=10, sticky="w")
-        ctk.CTkButton(folder_frame, text="Select", command=self.select_folder, width=100).grid(row=0, column=2, padx=10, pady=10, sticky="e")
+        ctk.CTkButton(folder_frame, text="Select", command=self.select_folder, width=100).grid(row=0, column=2, padx=10, pady=10)
 
         # JSON File Input
         json_frame = ctk.CTkFrame(frame, corner_radius=10)
@@ -48,7 +48,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(json_frame, text="JSON File:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
         ctk.CTkEntry(json_frame, textvariable=self.json_path, width=400).grid(row=0, column=1, padx=10, pady=10, sticky="w")
-        ctk.CTkButton(json_frame, text="Select", command=self.select_json, width=100).grid(row=0, column=2, padx=10, pady=10, sticky="e")
+        ctk.CTkButton(json_frame, text="Select", command=self.select_json, width=100).grid(row=0, column=2, padx=10, pady=10)
 
         # Progress Bar
         self.progress_bar = ctk.CTkProgressBar(frame, orientation="horizontal", mode="determinate", width=500)
@@ -71,6 +71,12 @@ class App(ctk.CTk):
         if file:
             self.json_path.set(file)
 
+    def update_progress(self, current, total):
+        """Update the progress bar."""
+        progress_value = current / total
+        self.progress_bar.set(progress_value)
+        self.update_idletasks()
+
     def run_process(self):
         """Run the photo processing logic."""
         folder = self.folder_path.get()
@@ -82,7 +88,9 @@ class App(ctk.CTk):
 
         try:
             self.progress_bar.set(0)  # Reset progress bar
-            added_count, skipped_count, error_log = process_photos(folder, json_file)
+            added_count, skipped_count, error_log = process_photos(
+                folder, json_file, progress_callback=self.update_progress
+            )
             result_message = (
                 f"GPS data added to {added_count} photos.\n"
                 f"{skipped_count} photos already had GPS data.\n"
