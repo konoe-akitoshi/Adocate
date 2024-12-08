@@ -32,7 +32,7 @@ class App(ctk.CTk):
 
         # Title Label
         ctk.CTkLabel(frame, text="Adocate", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 5))
-        ctk.CTkLabel(frame, text="Add GPS data to your photos using Google Maps location history.",
+        ctk.CTkLabel(frame, text="Add GPS data to your photos using location history.",
                      font=ctk.CTkFont(size=14)).pack(pady=(0, 20))
 
         # Photo Folder Input

@@ -12,6 +12,69 @@ def parse_timestamp(timestamp):
     return datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%f%z")
 
 
+def parse_nmea_time(nmea_time):
+    """Parse NMEA time format (hhmmss.ss) to a datetime object."""
+    try:
+        hours = int(nmea_time[:2])
+        minutes = int(nmea_time[2:4])
+        seconds = float(nmea_time[4:])
+        return timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_nmea_date(nmea_date):
+    """Parse NMEA date format (ddmmyy) to a datetime object."""
+    try:
+        day = int(nmea_date[:2])
+        month = int(nmea_date[2:4])
+        year = 2000 + int(nmea_date[4:])  # Assume dates are in 2000s
+        return datetime(year, month, day)
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_nmea(nmea_file):
+    """Parse NMEA log file for GPS data."""
+    locations = []
+    try:
+        with open(nmea_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        current_date = None
+        for line in lines:
+            if line.startswith("$GPRMC") or line.startswith("$GNRMC"):
+                parts = line.split(",")
+                if parts[2] == "A":  # Check for valid data
+                    time = parse_nmea_time(parts[1])
+                    date = parse_nmea_date(parts[9])
+                    if time and date:
+                        timestamp = datetime.combine(date, datetime.min.time(), tzinfo=timezone.utc) + time
+                        latitude = nmea_to_decimal(parts[3], parts[4])
+                        longitude = nmea_to_decimal(parts[5], parts[6])
+                        locations.append({
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "timestamp": timestamp
+                        })
+    except Exception as e:
+        print(f"Error parsing NMEA file: {e}")
+    return locations
+
+
+def nmea_to_decimal(value, direction):
+    """Convert NMEA latitude/longitude to decimal degrees."""
+    try:
+        degrees = int(value[:2])
+        minutes = float(value[2:])
+        decimal = degrees + minutes / 60
+        if direction in ("S", "W"):
+            decimal *= -1
+        return decimal
+    except (ValueError, IndexError):
+        return None
+
+
 def parse_segments(json_file):
     """Extract location data (latitude, longitude, timestamp) from JSON file."""
     with open(json_file, "r", encoding="utf-8") as f:
@@ -97,9 +160,15 @@ def find_photos_recursively(directory):
     return photo_files
 
 
-def process_photos(photo_dir, json_file, progress_callback=None):
-    """Process all photos in the directory and its subdirectories to add GPS data."""
-    locations = parse_segments(json_file)
+def process_photos(photo_dir, location_file, file_type, progress_callback=None):
+    """Process all photos to add GPS data, supporting multiple location data types."""
+    if file_type == "json":
+        locations = parse_segments(location_file)
+    elif file_type == "nmea":
+        locations = parse_nmea(location_file)
+    else:
+        raise ValueError("Unsupported file type")
+
     photo_files = find_photos_recursively(photo_dir)
     total = len(photo_files)
 
@@ -127,7 +196,6 @@ def process_photos(photo_dir, json_file, progress_callback=None):
         except Exception as e:
             error_log.append(f"Error processing {photo_path}: {e}")
 
-        # Update progress
         if progress_callback:
             progress_callback(i, total)
 
