@@ -179,14 +179,10 @@ def find_photos_recursively(directory):
     return photo_files
 
 
-def process_photos(photo_dir, location_file, file_type, progress_callback=None):
-    """Process all photos to add GPS data, supporting multiple location data types."""
-    if file_type == "json":
-        locations = parse_segments(location_file)
-    elif file_type == "nmea":
-        locations = parse_nmea(location_file)
-    else:
-        raise ValueError("Unsupported file type")
+def process_photos(photo_dir, all_locations, progress_callback=None):
+    """Process all photos to add GPS data, using a unified location data list."""
+    from PIL import Image
+    import piexif
 
     photo_files = find_photos_recursively(photo_dir)
     total = len(photo_files)
@@ -197,16 +193,19 @@ def process_photos(photo_dir, location_file, file_type, progress_callback=None):
 
     for i, photo_path in enumerate(photo_files, start=1):
         try:
+            # Skip photos that already have GPS data
             if has_gps_data(photo_path):
                 skipped_count += 1
                 continue
 
+            # Get the photo timestamp
             photo_time = get_photo_timestamp(photo_path)
             if not photo_time:
                 error_log.append(f"No timestamp found for: {photo_path}")
                 continue
 
-            closest = find_closest_location(photo_time, locations)
+            # Find the closest location data by timestamp
+            closest = find_closest_location(photo_time, all_locations)
             if closest:
                 add_gps_to_photo(photo_path, closest["latitude"], closest["longitude"])
                 added_count += 1
@@ -215,6 +214,7 @@ def process_photos(photo_dir, location_file, file_type, progress_callback=None):
         except Exception as e:
             error_log.append(f"Error processing {photo_path}: {e}")
 
+        # Update progress
         if progress_callback:
             progress_callback(i, total)
 

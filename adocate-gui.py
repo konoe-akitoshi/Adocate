@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from core import process_photos
+from core import process_photos, parse_nmea, parse_segments
 import threading
 
 
@@ -10,7 +10,7 @@ class App(ctk.CTk):
 
         # Window setup
         self.title("Adocate - Add GPS Data to Photos")
-        self.geometry("750x450")
+        self.geometry("750x550")
         self.resizable(False, False)
 
         # Theme setup
@@ -19,8 +19,9 @@ class App(ctk.CTk):
 
         # Variables
         self.folder_path = ctk.StringVar()
-        self.location_file_path = ctk.StringVar()
-        self.file_type = None  # Automatically detected file type
+        self.location_file_paths = []  # List to hold multiple location files
+        self.file_types = []  # List of file types corresponding to each location file
+        self.overwrite_gps = ctk.BooleanVar(value=False)  # Overwrite GPS flag
 
         # UI setup
         self.create_widgets()
@@ -33,7 +34,7 @@ class App(ctk.CTk):
 
         # Title Label
         ctk.CTkLabel(frame, text="Adocate", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 5))
-        ctk.CTkLabel(frame, text="Add GPS data to your photos using Google Maps or NMEA log.",
+        ctk.CTkLabel(frame, text="Add GPS data to your photos using Google Maps or NMEA logs.",
                      font=ctk.CTkFont(size=14)).pack(pady=(0, 20))
 
         # Photo Folder Input
@@ -44,13 +45,18 @@ class App(ctk.CTk):
         ctk.CTkEntry(folder_frame, textvariable=self.folder_path, width=400).grid(row=0, column=1, padx=10, pady=10, sticky="w")
         ctk.CTkButton(folder_frame, text="Select", command=self.select_folder, width=100).grid(row=0, column=2, padx=10, pady=10)
 
-        # Location File Input
+        # Location Files Input
         file_frame = ctk.CTkFrame(frame, corner_radius=10)
         file_frame.pack(pady=10, padx=10, fill="x")
 
-        ctk.CTkLabel(file_frame, text="Location File:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        ctk.CTkEntry(file_frame, textvariable=self.location_file_path, width=400).grid(row=0, column=1, padx=10, pady=10, sticky="w")
-        ctk.CTkButton(file_frame, text="Select", command=self.select_location_file, width=100).grid(row=0, column=2, padx=10, pady=10)
+        ctk.CTkLabel(file_frame, text="Location Files:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkButton(file_frame, text="Select", command=self.select_location_files, width=100).grid(row=0, column=2, padx=10, pady=10)
+
+        self.file_list = ctk.CTkTextbox(file_frame, height=100, width=550, state="normal")
+        self.file_list.grid(row=1, column=0, columnspan=3, padx=10, pady=10)
+
+        # Overwrite Option
+        ctk.CTkCheckBox(frame, text="Overwrite existing GPS data", variable=self.overwrite_gps).pack(pady=10)
 
         # Progress Bar
         self.progress_bar = ctk.CTkProgressBar(frame, orientation="horizontal", mode="determinate", width=500)
@@ -68,30 +74,39 @@ class App(ctk.CTk):
         if folder:
             self.folder_path.set(folder)
 
-    def select_location_file(self):
-        """Open a dialog to select the location data file."""
-        file = filedialog.askopenfilename(filetypes=[("All Files", "*.*")], title="Select a Location File")
-        if file:
-            self.location_file_path.set(file)
-            self.detect_file_type(file)
+    def select_location_files(self):
+        """Open a dialog to select multiple location files."""
+        files = filedialog.askopenfilenames(filetypes=[("All Files", "*.*")], title="Select Location Files")
+        if files:
+            self.location_file_paths.extend(files)
+            self.detect_file_types(files)
+            self.update_file_list()
 
-    def detect_file_type(self, file_path):
-        """Detect the type of location file based on extension or content."""
-        try:
-            if file_path.endswith(".json"):
-                self.file_type = "json"
-            elif file_path.endswith(".log") or file_path.endswith(".txt"):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    first_line = f.readline()
-                    if first_line.startswith("$GPRMC") or first_line.startswith("$GPGGA"):
-                        self.file_type = "nmea"
-                    else:
-                        raise ValueError("Unknown NMEA format.")
-            else:
-                raise ValueError("Unsupported file format.")
-        except Exception as e:
-            self.file_type = None
-            messagebox.showerror("Error", f"Could not detect file type: {e}")
+    def detect_file_types(self, files):
+        """Detect file types for the selected location files."""
+        for file_path in files:
+            try:
+                if file_path.endswith(".json"):
+                    self.file_types.append("json")
+                elif file_path.endswith(".log") or file_path.endswith(".txt"):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        first_line = f.readline()
+                        if first_line.startswith("$GPRMC") or first_line.startswith("$GPGGA"):
+                            self.file_types.append("nmea")
+                        else:
+                            raise ValueError("Unknown NMEA format.")
+                else:
+                    raise ValueError("Unsupported file format.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not detect file type for {file_path}: {e}")
+
+    def update_file_list(self):
+        """Update the displayed list of selected location files."""
+        self.file_list.configure(state="normal")
+        self.file_list.delete("1.0", "end")
+        for file_path in self.location_file_paths:
+            self.file_list.insert("end", f"{file_path}\n")
+        self.file_list.configure(state="disabled")
 
     def update_progress(self, current, total):
         """Update the progress bar."""
@@ -107,27 +122,35 @@ class App(ctk.CTk):
     def run_process(self):
         """Run the photo processing logic."""
         folder = self.folder_path.get()
-        location_file = self.location_file_path.get()
 
-        if not folder or not location_file:
-            messagebox.showerror("Error", "Please specify both a photo folder and a location file.")
-            return
-
-        if not self.file_type:
-            messagebox.showerror("Error", "File type could not be detected. Please check the location file.")
+        if not folder or not self.location_file_paths:
+            messagebox.showerror("Error", "Please specify both a photo folder and at least one location file.")
             return
 
         try:
             self.run_button.configure(state="disabled")
             self.progress_bar.set(0)  # Reset progress bar
 
+            # Combine all location data from the selected files
+            all_locations = []
+            for file_path, file_type in zip(self.location_file_paths, self.file_types):
+                if file_type == "json":
+                    all_locations.extend(parse_segments(file_path))
+                elif file_type == "nmea":
+                    all_locations.extend(parse_nmea(file_path))
+
+            # Ensure all locations have a unified structure and sort by timestamp
+            all_locations = [loc for loc in all_locations if loc.get("latitude") and loc.get("longitude") and loc.get("timestamp")]
+            all_locations.sort(key=lambda loc: loc["timestamp"])
+
+            # Process photos with overwrite option
             added_count, skipped_count, error_log = process_photos(
-                folder, location_file, self.file_type, progress_callback=self.update_progress
+                folder, all_locations, progress_callback=self.update_progress, overwrite=self.overwrite_gps.get()
             )
 
             result_message = (
                 f"GPS data added to {added_count} photos.\n"
-                f"{skipped_count} photos already had GPS data.\n"
+                f"{skipped_count} photos were skipped.\n"
             )
             if error_log:
                 result_message += f"{len(error_log)} photos could not be processed. Check the console for details."
