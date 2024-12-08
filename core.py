@@ -1,4 +1,3 @@
-# core.py
 import os
 import piexif
 from datetime import datetime, timezone, timedelta
@@ -88,19 +87,27 @@ def get_photo_timestamp(photo_path):
     return None
 
 
+def find_photos_recursively(directory):
+    """Recursively find all photo files in the directory."""
+    photo_files = []
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.lower().endswith((".jpg", ".jpeg")):
+                photo_files.append(os.path.join(root, file))
+    return photo_files
+
+
 def process_photos(photo_dir, json_file):
-    """Process all photos in the directory to add GPS data."""
+    """Process all photos in the directory and its subdirectories to add GPS data."""
     locations = parse_segments(json_file)
-    photos = [f for f in os.listdir(photo_dir) if f.lower().endswith((".jpg", ".jpeg"))]
-    total = len(photos)
+    photo_files = find_photos_recursively(photo_dir)
+    total = len(photo_files)
 
     added_count = 0
     skipped_count = 0
     error_log = []
 
-    for photo_file in photos:
-        photo_path = os.path.join(photo_dir, photo_file)
-
+    for i, photo_path in enumerate(photo_files, start=1):
         try:
             if has_gps_data(photo_path):
                 skipped_count += 1
@@ -118,7 +125,6 @@ def process_photos(photo_dir, json_file):
             else:
                 error_log.append(f"No location data found for: {photo_path}")
         except Exception as e:
-            # キャッチされなかったエラーをログに追加
             error_log.append(f"Error processing {photo_path}: {e}")
 
     return added_count, skipped_count, error_log
