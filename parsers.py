@@ -127,43 +127,49 @@ class GoogleTimelineParser:
                 # Handle activitySegment
                 if "activitySegment" in obj:
                     segment = obj["activitySegment"]
-                    start_lat = segment["startLocation"]["latitudeE7"] / 1e7
-                    start_lng = segment["startLocation"]["longitudeE7"] / 1e7
-                    end_lat = segment["endLocation"]["latitudeE7"] / 1e7
-                    end_lng = segment["endLocation"]["longitudeE7"] / 1e7
-                    start_time = datetime.fromisoformat(segment["duration"]["startTimestamp"].replace("Z", "+00:00"))
-                    end_time = datetime.fromisoformat(segment["duration"]["endTimestamp"].replace("Z", "+00:00"))
+                    try:
+                        start_lat = segment["startLocation"]["latitudeE7"] / 1e7
+                        start_lng = segment["startLocation"]["longitudeE7"] / 1e7
+                        end_lat = segment["endLocation"]["latitudeE7"] / 1e7
+                        end_lng = segment["endLocation"]["longitudeE7"] / 1e7
+                        start_time = datetime.fromisoformat(segment["duration"]["startTimestamp"].replace("Z", "+00:00"))
+                        end_time = datetime.fromisoformat(segment["duration"]["endTimestamp"].replace("Z", "+00:00"))
 
-                    locations.append({
-                        "latitude": start_lat,
-                        "longitude": start_lng,
-                        "timestamp": start_time,
-                    })
-                    locations.append({
-                        "latitude": end_lat,
-                        "longitude": end_lng,
-                        "timestamp": end_time,
-                    })
+                        locations.append({
+                            "latitude": start_lat,
+                            "longitude": start_lng,
+                            "timestamp": start_time,
+                        })
+                        locations.append({
+                            "latitude": end_lat,
+                            "longitude": end_lng,
+                            "timestamp": end_time,
+                        })
+                    except KeyError as e:
+                        print(f"Skipping activitySegment due to missing key: {e}")
 
                 # Handle placeVisit
                 if "placeVisit" in obj:
                     visit = obj["placeVisit"]
-                    location = visit["location"]
-                    latitude = location["latitudeE7"] / 1e7
-                    longitude = location["longitudeE7"] / 1e7
-                    start_time = datetime.fromisoformat(visit["duration"]["startTimestamp"].replace("Z", "+00:00"))
-                    end_time = datetime.fromisoformat(visit["duration"]["endTimestamp"].replace("Z", "+00:00"))
+                    try:
+                        location = visit["location"]
+                        latitude = location["latitudeE7"] / 1e7
+                        longitude = location["longitudeE7"] / 1e7
+                        start_time = datetime.fromisoformat(visit["duration"]["startTimestamp"].replace("Z", "+00:00"))
+                        end_time = datetime.fromisoformat(visit["duration"]["endTimestamp"].replace("Z", "+00:00"))
 
-                    locations.append({
-                        "latitude": latitude,
-                        "longitude": longitude,
-                        "timestamp": start_time,
-                    })
-                    locations.append({
-                        "latitude": latitude,
-                        "longitude": longitude,
-                        "timestamp": end_time,
-                    })
+                        locations.append({
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "timestamp": start_time,
+                        })
+                        locations.append({
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "timestamp": end_time,
+                        })
+                    except KeyError as e:
+                        print(f"Skipping placeVisit due to missing key: {e}")
 
         except Exception as e:
             print(f"Error parsing Google Timeline JSON: {e}")
