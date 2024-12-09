@@ -1,19 +1,46 @@
-from abc import ABC, abstractmethod
-from datetime import datetime, timezone, time
-import json  # 修正: json モジュールをインポート
+import json
+from datetime import datetime
+from typing import List, Dict
 
 
-class LocationParser(ABC):
-    """Abstract base class for location parsers."""
-    @abstractmethod
-    def parse(self, file_path):
-        """Parse the file and return a list of unified location data."""
-        pass
+class JSONLocationParser:
+    """Parser for new JSON format with latitudeE7 and longitudeE7 fields."""
+
+    @staticmethod
+    def parse(file_path: str) -> List[Dict]:
+        """Parse the JSON file and return unified location data."""
+        locations = []
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            for entry in data.get("locations", []):
+                try:
+                    timestamp = datetime.fromtimestamp(float(entry["timestampMs"]) / 1000)
+                    longitude = float(entry["longitudeE7"]) / 1e7
+                    latitude = float(entry["latitudeE7"]) / 1e7
+
+                    locations.append({
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "timestamp": timestamp,
+                    })
+                except KeyError as e:
+                    print(f"Skipping entry due to missing key: {e}")
+
+        except Exception as e:
+            print(f"Error parsing file {file_path}: {e}")
+
+        return locations
 
 
-class JSONLocationParser(LocationParser):
-    """Parser for Google Takeout JSON files."""
-    def parse(self, file_path):
+class OldJSONLocationParser:
+    """Parser for old JSON format with semanticSegments."""
+
+    @staticmethod
+    def parse(file_path: str) -> List[Dict]:
+        """Parse the old JSON format and return unified location data."""
         locations = []
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -22,72 +49,162 @@ class JSONLocationParser(LocationParser):
             if "timelinePath" in segment:
                 for path in segment["timelinePath"]:
                     try:
-                        lat, lng = float(path["point"].split(",")[0]), float(path["point"].split(",")[1])
-                        timestamp = datetime.strptime(path["time"], "%Y-%m-%dT%H:%M:%S.%f%z").astimezone(timezone.utc)
-                        locations.append({"latitude": lat, "longitude": lng, "timestamp": timestamp})
-                    except (ValueError, KeyError):
-                        continue
+                        # Remove ° symbol before converting to float
+                        latitude, longitude = map(
+                            lambda x: float(x.replace("°", "").strip()), 
+                            path["point"].split(",")
+                        )
+                        timestamp = datetime.strptime(path["time"], "%Y-%m-%dT%H:%M:%S.%f%z")
+                        locations.append({
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "timestamp": timestamp,
+                        })
+                    except Exception as e:
+                        print(f"Error parsing old JSON entry: {e}")
+
         return locations
 
 
-class NMEALocationParser(LocationParser):
-    """Parser for NMEA log files."""
-    def parse(self, file_path):
+class NMEALocationParser:
+    """Parser for NMEA location format (e.g., GPS logs)."""
+
+    @staticmethod
+    def parse(file_path: str) -> List[Dict]:
         locations = []
         with open(file_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        for line in lines:
-            if line.startswith("$GPRMC") or line.startswith("$GNRMC"):
-                parts = line.split(",")
-                if len(parts) < 12 or parts[2] != "A":  # Ensure valid data
-                    continue
-
-                try:
-                    lat = self.nmea_to_decimal(parts[3], parts[4])
-                    lng = self.nmea_to_decimal(parts[5], parts[6])
-                    utc_time = self.parse_nmea_time(parts[1])
-                    date = self.parse_nmea_date(parts[9])
-                    timestamp = datetime.combine(date, utc_time).replace(tzinfo=timezone.utc)
-
-                    locations.append({"latitude": lat, "longitude": lng, "timestamp": timestamp})
-                except (ValueError, IndexError):
-                    continue
+            for line in f:
+                if line.startswith("$GPGGA"):
+                    try:
+                        parts = line.split(",")
+                        latitude = NMEALocationParser.convert_to_decimal(parts[2], parts[3])
+                        longitude = NMEALocationParser.convert_to_decimal(parts[4], parts[5])
+                        timestamp = NMEALocationParser.parse_timestamp(parts[1])
+                        locations.append({
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "timestamp": timestamp,
+                        })
+                    except Exception as e:
+                        print(f"Error parsing NMEA line: {line.strip()} - {e}")
         return locations
 
-    def nmea_to_decimal(self, value, direction):
-        if len(value.split(".")[0]) <= 4:  # Latitude (DDMM.MMMM)
-            degrees = int(value[:2])
-            minutes = float(value[2:])
-        else:  # Longitude (DDDMM.MMMM)
-            degrees = int(value[:3])
-            minutes = float(value[3:])
-
+    @staticmethod
+    def convert_to_decimal(coord, direction):
+        """Convert NMEA coordinates to decimal degrees."""
+        if not coord or not direction:
+            raise ValueError("Invalid NMEA coordinate or direction.")
+        degrees = int(float(coord) / 100)
+        minutes = float(coord) - (degrees * 100)
         decimal = degrees + (minutes / 60)
-        return -decimal if direction in ("S", "W") else decimal
+        if direction in ["S", "W"]:
+            decimal *= -1
+        return decimal
 
-    def parse_nmea_time(self, nmea_time):
-        """Parse NMEA time format (hhmmss.ss) into time object."""
-        hours = int(nmea_time[:2])
-        minutes = int(nmea_time[2:4])
-        seconds = int(float(nmea_time[4:]))
-        return time(hour=hours, minute=minutes, second=seconds)
+    @staticmethod
+    def parse_timestamp(time_str):
+        """Parse NMEA UTC time to datetime."""
+        if not time_str:
+            raise ValueError("Invalid NMEA time string.")
+        hour = int(time_str[:2])
+        minute = int(time_str[2:4])
+        second = int(float(time_str[4:]))
+        return datetime.utcnow().replace(hour=hour, minute=minute, second=second, microsecond=0)
 
-    def parse_nmea_date(self, nmea_date):
-        """Parse NMEA date format (ddmmyy) into date object."""
-        day = int(nmea_date[:2])
-        month = int(nmea_date[2:4])
-        year = 2000 + int(nmea_date[4:])  # Assume 21st century
-        return datetime(year, month, day).date()
+
+class GoogleTimelineParser:
+    """Parser for Google Timeline JSON format."""
+
+    @staticmethod
+    def parse(file_path: str) -> List[Dict]:
+        """Parse the Google Timeline JSON format and return unified location data."""
+        locations = []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            for obj in data.get("timelineObjects", []):
+                # Handle activitySegment
+                if "activitySegment" in obj:
+                    segment = obj["activitySegment"]
+                    start_lat = segment["startLocation"]["latitudeE7"] / 1e7
+                    start_lng = segment["startLocation"]["longitudeE7"] / 1e7
+                    end_lat = segment["endLocation"]["latitudeE7"] / 1e7
+                    end_lng = segment["endLocation"]["longitudeE7"] / 1e7
+                    start_time = datetime.fromisoformat(segment["duration"]["startTimestamp"].replace("Z", "+00:00"))
+                    end_time = datetime.fromisoformat(segment["duration"]["endTimestamp"].replace("Z", "+00:00"))
+
+                    locations.append({
+                        "latitude": start_lat,
+                        "longitude": start_lng,
+                        "timestamp": start_time,
+                    })
+                    locations.append({
+                        "latitude": end_lat,
+                        "longitude": end_lng,
+                        "timestamp": end_time,
+                    })
+
+                # Handle placeVisit
+                if "placeVisit" in obj:
+                    visit = obj["placeVisit"]
+                    location = visit["location"]
+                    latitude = location["latitudeE7"] / 1e7
+                    longitude = location["longitudeE7"] / 1e7
+                    start_time = datetime.fromisoformat(visit["duration"]["startTimestamp"].replace("Z", "+00:00"))
+                    end_time = datetime.fromisoformat(visit["duration"]["endTimestamp"].replace("Z", "+00:00"))
+
+                    locations.append({
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "timestamp": start_time,
+                    })
+                    locations.append({
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "timestamp": end_time,
+                    })
+
+        except Exception as e:
+            print(f"Error parsing Google Timeline JSON: {e}")
+
+        return locations
 
 
 class LocationParserFactory:
-    """Factory for creating location parsers based on file type."""
+    """Factory to determine and return the appropriate parser."""
+
     @staticmethod
-    def get_parser(file_path):
-        if file_path.endswith(".json"):
-            return JSONLocationParser()
-        elif file_path.endswith(".log") or file_path.endswith(".txt"):
-            return NMEALocationParser()
-        else:
-            raise ValueError(f"Unsupported file format: {file_path}")
+    def get_parser(file_path: str):
+        """Determine the correct parser based on file structure."""
+        with open(file_path, "r", encoding="utf-8") as f:
+            try:
+                data = json.load(f)
+                if "timelineObjects" in data:
+                    return GoogleTimelineParser
+                if "locations" in data:
+                    return JSONLocationParser
+                if "semanticSegments" in data:
+                    return OldJSONLocationParser
+            except json.JSONDecodeError:
+                with open(file_path, "r", encoding="utf-8") as file:
+                    first_line = file.readline()
+                    if first_line.startswith("$GPGGA"):
+                        return NMEALocationParser
+
+        raise ValueError("Unknown file format.")
+
+
+def parse_location_files(file_paths: List[str]) -> List[Dict]:
+    """Parse multiple location files and combine into a unified format."""
+    all_locations = []
+
+    for file_path in file_paths:
+        try:
+            parser_class = LocationParserFactory.get_parser(file_path)
+            locations = parser_class.parse(file_path)
+            all_locations.extend(locations)
+        except Exception as e:
+            print(f"Error parsing file {file_path}: {e}")
+
+    return sorted(all_locations, key=lambda x: x["timestamp"])
