@@ -7,6 +7,9 @@ Adocate is a tool that leverages your Google Maps location history to add GPS lo
 
 Adocate（アドケイト） は、Googleマップのロケーション履歴を活用して、写真にGPS位置情報（緯度・経度）を追加するツールです。撮影地を記録したい写真愛好家や、位置情報の管理を効率化したい方に最適です。
 
+# Screenshots
+![image](https://github.com/user-attachments/assets/dde1e339-6e6c-4d4f-a4e8-aaacec783fc5)
+
 # Features / 特徴
 - **Add GPS Data / GPSデータの追加:**  
 Automatically adds latitude and longitude to your photos' EXIF metadata.  
@@ -95,6 +98,3 @@ Click Run to add GPS data to your photos.
 Check Your Photos:
 
 The tool will update your photos with GPS data directly in the EXIF metadata.
-
-# Screenshots
-![image](https://github.com/user-attachments/assets/df6bcbbf-3a96-4e92-a837-5c2553775da7)
