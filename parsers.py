@@ -128,6 +128,11 @@ class GoogleTimelineParser:
                 if "activitySegment" in obj:
                     segment = obj["activitySegment"]
                     try:
+                        # Check for required keys in activitySegment
+                        if "startLocation" not in segment or "endLocation" not in segment:
+                            print(f"Skipping activitySegment due to missing start or end location: {segment}")
+                            continue
+
                         start_lat = segment["startLocation"]["latitudeE7"] / 1e7
                         start_lng = segment["startLocation"]["longitudeE7"] / 1e7
                         end_lat = segment["endLocation"]["latitudeE7"] / 1e7
@@ -152,6 +157,11 @@ class GoogleTimelineParser:
                 if "placeVisit" in obj:
                     visit = obj["placeVisit"]
                     try:
+                        # Check for required keys in placeVisit
+                        if "location" not in visit or "latitudeE7" not in visit["location"] or "longitudeE7" not in visit["location"]:
+                            print(f"Skipping placeVisit due to missing location data: {visit}")
+                            continue
+
                         location = visit["location"]
                         latitude = location["latitudeE7"] / 1e7
                         longitude = location["longitudeE7"] / 1e7
