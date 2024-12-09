@@ -8,8 +8,7 @@ from tkinter import filedialog, messagebox
 def resource_path(relative_path):
     """Get the absolute path to the resource, compatible with PyInstaller."""
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
+        base_path = sys._MEIPASS  # For PyInstaller
     except AttributeError:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
@@ -49,14 +48,20 @@ class App(ctk.CTk):
 
     def create_widgets(self):
         """Set up the UI components."""
-        # Main frame
         main_frame = ctk.CTkFrame(self, corner_radius=15)
         main_frame.pack(pady=20, padx=20, fill="both", expand=True)
 
         # Title
-        ctk.CTkLabel(main_frame, text="Adocate", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 5))
-        ctk.CTkLabel(main_frame, text="Add GPS data to your photos using various location files.",
-                     font=ctk.CTkFont(size=14)).pack(pady=(0, 20))
+        ctk.CTkLabel(
+            main_frame,
+            text="Adocate",
+            font=ctk.CTkFont(size=24, weight="bold"),
+        ).pack(pady=(10, 5))
+        ctk.CTkLabel(
+            main_frame,
+            text="Add GPS data to your photos using various location files.",
+            font=ctk.CTkFont(size=14),
+        ).pack(pady=(0, 20))
 
         # Photo Folder Input
         folder_frame = ctk.CTkFrame(main_frame, corner_radius=10)
@@ -64,23 +69,18 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(folder_frame, text="Photo Folder:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
         ctk.CTkEntry(folder_frame, textvariable=self.folder_path, width=400).grid(row=0, column=1, padx=10, pady=10, sticky="w")
-        ctk.CTkButton(folder_frame, text="Select", command=self.select_folder, width=100).grid(row=0, column=2, padx=10, pady=10)
+        ctk.CTkButton(folder_frame, text="Select", command=self.select_folder, width=150).grid(row=0, column=2, padx=10, pady=10)
 
         # Location Files Input
         file_frame = ctk.CTkFrame(main_frame, corner_radius=10)
         file_frame.pack(pady=10, padx=10, fill="x")
 
-        # Location Files Label
         ctk.CTkLabel(file_frame, text="Location Files:", font=ctk.CTkFont(size=14)).grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
-
-        # File List Box
-        self.file_list = ctk.CTkTextbox(file_frame, height=150, width=400, state="normal")
+        self.file_list = ctk.CTkTextbox(file_frame, height=150, width=500, state="normal")
         self.file_list.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
 
-        # Button Controls
         control_frame = ctk.CTkFrame(file_frame, corner_radius=10)
         control_frame.grid(row=1, column=1, padx=10, pady=10, sticky="n")
-
         ctk.CTkButton(control_frame, text="Add", command=self.select_location_files, width=150).pack(pady=(0, 5))
         ctk.CTkButton(control_frame, text="Remove Selected", command=self.remove_selected_file, width=150).pack(pady=5)
         ctk.CTkButton(control_frame, text="Clear All", command=self.clear_all_files, width=150).pack(pady=5)
@@ -92,7 +92,7 @@ class App(ctk.CTk):
         # Progress Bar
         self.progress_bar = ctk.CTkProgressBar(main_frame, orientation="horizontal", mode="determinate", width=500)
         self.progress_bar.pack(pady=20)
-        self.progress_bar.set(0)
+        self.progress_bar.set(0.0)  # Ensure the progress bar starts empty
 
         # Run Button
         self.run_button = ctk.CTkButton(main_frame, text="Run", command=self.run_in_thread, width=200, height=40,
@@ -128,7 +128,7 @@ class App(ctk.CTk):
         self.update_file_list()
 
     def update_progress(self, current, total):
-        progress_value = current / total
+        progress_value = current / total if total > 0 else 0
         self.progress_bar.set(progress_value)
         self.update_idletasks()
 
@@ -144,7 +144,7 @@ class App(ctk.CTk):
 
         try:
             self.run_button.configure(state="disabled")
-            self.progress_bar.set(0)
+            self.progress_bar.set(0.0)
 
             self.unified_locations = parse_location_files(self.location_file_paths)
             added_count, skipped_count, error_log = process_photos(
